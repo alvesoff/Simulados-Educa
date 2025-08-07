@@ -158,6 +158,11 @@ app.get('/', (_req, res) => {
   });
 });
 
+// Rota para favicon.ico - evita erro 404
+app.get('/favicon.ico', (_req, res) => {
+  res.status(204).end();
+});
+
 // Health check
 app.get('/health', healthCheckMiddleware);
 
