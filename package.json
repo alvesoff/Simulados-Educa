@@ -27,7 +27,7 @@
     "postbuild": "npm run db:generate",
     "docker:build": "docker build -t sistema-provas-backend .",
     "docker:run": "docker run -p 3000:3000 sistema-provas-backend",
-    "render:build": "npm install && npm run build && npm run db:migrate:prod"
+    "render:build": "npm install && npm run build && npm run db:push"
   },
   "keywords": [
     "nodejs",
