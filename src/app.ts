@@ -139,6 +139,25 @@ app.use((_req, res, next) => {
 
 // ===== ROTAS DE SISTEMA =====
 
+// Rota raiz - Welcome message
+app.get('/', (_req, res) => {
+  res.json({
+    success: true,
+    message: 'Sistema de Provas Online - API',
+    version: '1.0.0',
+    status: 'online',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      api: '/api',
+      health: '/health',
+      status: '/status',
+      ping: '/ping',
+      metrics: '/metrics'
+    },
+    documentation: 'https://github.com/alvesoff/educandario-simulados-backend'
+  });
+});
+
 // Health check
 app.get('/health', healthCheckMiddleware);
 
