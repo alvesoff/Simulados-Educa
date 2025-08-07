@@ -1,0 +1,201 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enum para roles de usuário
+enum UserRole {
+  TEACHER
+  STAFF
+}
+
+// Enum para tipos de teste
+enum TestType {
+  PRIVATE
+  COLLABORATIVE
+}
+
+// Enum para status do teste
+enum TestStatus {
+  ACTIVE
+  COMPLETED
+  EDITING
+}
+
+// Enum para dificuldade das questões
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+// Tabela de Escolas
+model School {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relacionamentos
+  users           User[]
+  tests           Test[]
+  studentAttempts StudentAttempt[]
+
+  @@map("schools")
+}
+
+// Tabela de Usuários
+model User {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  name        String
+  password    String
+  role        UserRole  @default(TEACHER)
+  schoolId    String
+  avatarUrl   String?
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relacionamentos
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  tests         Test[]
+  refreshTokens RefreshToken[]
+
+  @@index([email], map: "idx_users_email")
+  @@index([schoolId], map: "idx_users_school_id")
+  @@map("users")
+}
+
+// Tabela de Refresh Tokens
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  // Relacionamentos
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// Tabela de Testes/Provas
+model Test {
+  id               String     @id @default(cuid())
+  title            String
+  description      String?
+  type             TestType   @default(PRIVATE)
+  status           TestStatus @default(ACTIVE)
+  duration         Int? // em minutos
+  subjects         String[] // Array de matérias
+  targetGrades     String[] // Array de séries alvo
+  instructions     String?
+  allowReview      Boolean    @default(false)
+  shuffleQuestions Boolean    @default(false)
+  shuffleOptions   Boolean    @default(false)
+  showResults      Boolean    @default(true)
+  maxAttempts      Int        @default(1)
+  accessCode       String?    @unique
+  totalPoints      Int        @default(0)
+  questionsCount   Int        @default(0)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  createdById      String
+  schoolId         String?
+
+  // Relacionamentos
+  createdBy       User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  school          School?           @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  questions       TestQuestion[]
+  studentAttempts StudentAttempt[]
+
+  @@index([createdById], map: "idx_tests_created_by")
+  @@index([schoolId], map: "idx_tests_school_id")
+  @@index([status], map: "idx_tests_status")
+  @@index([accessCode], map: "idx_tests_access_code")
+  @@map("tests")
+}
+
+// Tabela de Questões
+model Question {
+  id              String     @id @default(cuid())
+  statement       String
+  alternatives    String[] // Array de alternativas
+  correctAnswer   Int // Índice da resposta correta (0-based)
+  subject         String // Disciplina
+  topic           String? // Tópico da questão
+  grade           Int? // Ano escolar
+  difficulty      Difficulty
+  tags            String[] // Array de tags
+  hasMath         Boolean    @default(false)
+  externalId      String? // ID da API externa
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // Relacionamentos
+  testQuestions TestQuestion[]
+
+  @@index([subject], map: "idx_questions_subject")
+  @@index([difficulty], map: "idx_questions_difficulty")
+  @@index([grade], map: "idx_questions_grade")
+  @@map("questions")
+}
+
+// Tabela de relacionamento entre Testes e Questões
+model TestQuestion {
+  id         String @id @default(cuid())
+  testId     String
+  questionId String
+  points     Int
+  orderNum   Int // Ordem da questão no teste
+
+  // Relacionamentos
+  test     Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([testId, orderNum])
+  @@map("test_questions")
+}
+
+// Tabela de Tentativas de Alunos (sem cadastro)
+model StudentAttempt {
+  id          String    @id @default(cuid())
+  testId      String
+  studentName String
+  schoolId    String
+  grade       String
+  classroom   String
+  answers     Json // Respostas do aluno
+  score       Int? // Pontuação obtida
+  totalPoints Int? // Total de pontos possíveis
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  duration    Int? // Tempo gasto em minutos
+  analytics   Json? // Dados de analytics do comportamento do aluno
+
+  // Relacionamentos
+  test   Test   @relation(fields: [testId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  // Índices otimizados para alta concorrência
+  @@index([testId], map: "idx_student_attempts_test_id")
+  @@index([schoolId], map: "idx_student_attempts_school_id")
+  @@index([startedAt], map: "idx_student_attempts_started_at")
+  @@index([testId, studentName], map: "idx_student_attempts_test_student") // Crítico para consultas por aluno específico
+  @@index([schoolId, testId], map: "idx_student_attempts_school_test") // Crítico para relatórios por escola
+  @@index([testId, completedAt], map: "idx_student_attempts_test_completed") // Otimiza consultas de tentativas finalizadas
+  @@map("student_attempts")
+}
