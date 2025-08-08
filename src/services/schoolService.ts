@@ -4,7 +4,11 @@ const prisma = new PrismaClient({
   log: ['error', 'warn'],
 });
 import { logger } from '../utils/logger';
-import { ValidationError, ConflictError, NotFoundError } from '../middleware/errorHandler';
+import { 
+  NotFoundError, 
+  DuplicateError,
+  BusinessRuleError 
+} from '../middleware/errorHandler';
 import { z } from 'zod';
 
 // ===== TIPOS E INTERFACES =====
@@ -71,7 +75,7 @@ class SchoolService {
       });
 
       if (existingSchool) {
-        throw new ConflictError('Já existe uma escola com este código');
+        throw new DuplicateError('Escola', 'code');
       }
 
       // Cria a escola
@@ -183,7 +187,7 @@ class SchoolService {
         });
 
         if (schoolWithSameCode) {
-          throw new ConflictError('Já existe uma escola com este código');
+          throw new DuplicateError('Escola', 'code');
         }
       }
 
@@ -235,7 +239,11 @@ class SchoolService {
       }
 
       if (!school.isActive) {
-        throw new ValidationError('Escola já está desativada');
+        throw new BusinessRuleError(
+          'Escola já está desativada',
+          'SCHOOL_ALREADY_INACTIVE',
+          { action: 'Verifique o status da escola' }
+        );
       }
 
       const updatedSchool = await prisma.school.update({
@@ -277,7 +285,11 @@ class SchoolService {
       }
 
       if (school.isActive) {
-        throw new ValidationError('Escola já está ativa');
+        throw new BusinessRuleError(
+          'Escola já está ativa',
+          'SCHOOL_ALREADY_ACTIVE',
+          { action: 'Verifique o status da escola' }
+        );
       }
 
       const updatedSchool = await prisma.school.update({

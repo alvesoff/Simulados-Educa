@@ -13,7 +13,11 @@ import {
 import { 
   UnauthorizedError, 
   ValidationError, 
-  NotFoundError 
+  NotFoundError,
+  DuplicateError,
+  InvalidCredentialsError,
+  ExpiredTokenError,
+  InvalidTokenError
 } from '../middleware/errorHandler';
 
 // ===== INICIALIZAÇÃO =====
@@ -54,7 +58,7 @@ class AuthService {
       });
 
       if (existingUser) {
-        throw new ValidationError('Email já está em uso');
+        throw new DuplicateError('Usuário', 'email');
       }
 
       // Verifica se a escola existe
@@ -131,7 +135,7 @@ class AuthService {
       });
 
       if (!user) {
-        throw new UnauthorizedError('Credenciais inválidas');
+        throw new InvalidCredentialsError();
       }
 
       // Verifica se o usuário está ativo
@@ -147,7 +151,7 @@ class AuthService {
       // Verifica a senha
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
-        throw new UnauthorizedError('Credenciais inválidas');
+        throw new InvalidCredentialsError();
       }
 
       // Converte user para UserWithSchool
@@ -291,7 +295,7 @@ class AuthService {
       });
 
       if (!tokenRecord) {
-        throw new UnauthorizedError('Refresh token inválido');
+        throw new InvalidTokenError('Refresh token');
       }
 
       if (tokenRecord.expiresAt < new Date()) {
@@ -299,7 +303,7 @@ class AuthService {
         await prisma.refreshToken.delete({
           where: { id: tokenRecord.id },
         });
-        throw new UnauthorizedError('Refresh token expirado');
+        throw new ExpiredTokenError('Refresh token');
       }
 
       if (!tokenRecord.user.isActive || !tokenRecord.user.school.isActive) {
