@@ -262,12 +262,15 @@ export async function initializeApp(): Promise<void> {
   try {
     logger.info('Inicializando aplicação...');
 
-    // Testa conexão com Redis
+    // Testa conexão com Redis de forma mais robusta
     try {
-      await cache.get('test');
+      // Tenta uma operação simples no Redis
+      await cache.get('connection-test');
       logger.info('Conexão com Redis estabelecida');
     } catch (error) {
-      logger.warn('Redis não disponível, continuando sem cache');
+      logger.warn('Redis não disponível, continuando apenas com cache local', {
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
     }
 
     // Inicializar filas

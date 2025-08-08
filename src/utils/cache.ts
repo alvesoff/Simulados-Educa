@@ -20,17 +20,18 @@ class CacheManager {
     // Redis configurado para recursos limitados (512MB RAM, 0.1 CPU)
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
     this.redis = new Redis(redisUrl, {
-      enableReadyCheck: false,
-      maxRetriesPerRequest: 3, // Reduzido para recursos limitados
-      lazyConnect: true,
+      enableReadyCheck: true,
+      maxRetriesPerRequest: 3, // Limite de tentativas para evitar loops infinitos
+      lazyConnect: false, // Conecta imediatamente para evitar delays
       keepAlive: 30000, // Reduzido para 30s
-      connectTimeout: 10000, // Timeout reduzido
-      commandTimeout: 5000, // 5s timeout para comandos
+      connectTimeout: 15000, // Timeout aumentado para 15s
+      commandTimeout: 10000, // Timeout aumentado para 10s
       // Configurações de performance para recursos limitados
       family: 4,
       db: 0,
-      enableOfflineQueue: false,
+      enableOfflineQueue: true, // Habilitado para evitar erros de conexão
       enableAutoPipelining: false, // Desabilitado para recursos limitados
+      retryDelayOnFailover: 500, // Delay aumentado entre tentativas
     });
 
     // Cache local para dados frequentemente acessados
@@ -83,17 +84,22 @@ class CacheManager {
         this.localCache.delete(key);
       }
 
-      // 2. Busca no Redis
-      const redisValue = await this.redis.get(key);
-      if (redisValue) {
-        const parsed = JSON.parse(redisValue) as T;
-        // Armazena no cache local para próximas consultas (otimizado para 5K usuários)
-        this.localCache.set(key, {
-          value: parsed,
-          expires: Date.now() + 180000 // 3 minutos - rotação mais rápida
-        });
-        this.metrics.hits++;
-        return parsed;
+      // 2. Busca no Redis com tratamento de erro robusto
+      try {
+        const redisValue = await this.redis.get(key);
+        if (redisValue) {
+          const parsed = JSON.parse(redisValue) as T;
+          // Armazena no cache local para próximas consultas (otimizado para 5K usuários)
+          this.localCache.set(key, {
+            value: parsed,
+            expires: Date.now() + 180000 // 3 minutos - rotação mais rápida
+          });
+          this.metrics.hits++;
+          return parsed;
+        }
+      } catch (redisError) {
+        console.warn(`Redis não disponível para chave ${key}:`, redisError instanceof Error ? redisError.message : 'Erro desconhecido');
+        // Continua sem Redis, usando apenas cache local
       }
 
       this.metrics.misses++;
@@ -112,15 +118,20 @@ class CacheManager {
     try {
       const serialized = JSON.stringify(value);
       
-      // Define no Redis com TTL
-      await this.redis.setex(key, ttl, serialized);
-      
-      // Define no cache local com TTL menor
+      // Define no cache local primeiro
       const localTtl = Math.min(ttl, 300); // Máximo 5 minutos no cache local
       this.localCache.set(key, {
         value: value,
         expires: Date.now() + (localTtl * 1000)
       });
+      
+      // Define no Redis com tratamento de erro
+      try {
+        await this.redis.setex(key, ttl, serialized);
+      } catch (redisError) {
+        console.warn(`Redis não disponível para armazenar chave ${key}:`, redisError instanceof Error ? redisError.message : 'Erro desconhecido');
+        // Continua funcionando apenas com cache local
+      }
       
       this.updateMetrics();
       return true;
@@ -135,8 +146,17 @@ class CacheManager {
    */
   async del(key: string): Promise<boolean> {
     try {
-      await this.redis.del(key);
+      // Remove do cache local primeiro
       this.localCache.delete(key);
+      
+      // Remove do Redis com tratamento de erro
+      try {
+        await this.redis.del(key);
+      } catch (redisError) {
+        console.warn(`Redis não disponível para remover chave ${key}:`, redisError instanceof Error ? redisError.message : 'Erro desconhecido');
+        // Continua funcionando apenas com cache local
+      }
+      
       this.updateMetrics();
       return true;
     } catch (error) {
