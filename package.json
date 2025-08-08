@@ -23,11 +23,11 @@
     "db:seed": "tsx src/scripts/seed.ts",
     "db:reset": "prisma migrate reset",
     "clean": "rimraf dist",
-    "prebuild": "npm run clean",
-    "postbuild": "npm run db:generate",
+    "prebuild": "npm run clean && npx prisma generate",
+    "postbuild": "echo 'Build completed successfully'",
     "docker:build": "docker build -t sistema-provas-backend .",
     "docker:run": "docker run -p 3000:3000 sistema-provas-backend",
-    "render:build": "npm install && npm run build && npm run db:push"
+    "render:build": "npm install && npx prisma generate && npm run build"
   },
   "keywords": [
     "nodejs",
