@@ -38,12 +38,14 @@ Sistema de backend robusto e escalável para aplicações de provas online, dese
 - **testService.ts** - CRUD de testes com cache e validações
 - **questionService.ts** - Gestão de questões e importação
 - **studentService.ts** - Fluxo de estudantes e submissões
+- **schoolService.ts** - Gestão completa de escolas (CRUD, ativação/desativação)
 
 #### 🛣️ Rotas (routes/)
 - **auth.ts** - Endpoints de autenticação e autorização
 - **tests.ts** - API completa para gestão de testes
 - **questions.ts** - CRUD e operações avançadas de questões
 - **students.ts** - Fluxo de estudantes anônimos
+- **schools.ts** - API completa para gestão de escolas
 
 #### 📊 Tipos (types/)
 - **index.ts** - Definições de tipos TypeScript
@@ -1013,12 +1015,79 @@ npm run start:cluster
 
 ---
 
+## 🏫 Sistema de Gestão de Escolas
+
+### Funcionalidades Implementadas
+
+#### SchoolService (src/services/schoolService.ts)
+- **Criação de Escolas**: Validação de dados, verificação de códigos únicos
+- **Listagem**: Suporte a filtros (ativas/inativas) com contadores de usuários e testes
+- **Busca**: Por ID ou código da escola
+- **Atualização**: Modificação de dados com validações de integridade
+- **Ativação/Desativação**: Soft delete para manter histórico
+- **Validações**: Schemas Zod para entrada de dados
+- **Logs**: Rastreamento completo de operações
+
+#### Rotas de Escolas (src/routes/schools.ts)
+- **POST /api/schools** - Criar escola (Admin apenas)
+- **GET /api/schools** - Listar escolas (Admin/Staff)
+- **GET /api/schools/active** - Listar escolas ativas (Público)
+- **GET /api/schools/:id** - Buscar por ID (Admin/Staff)
+- **GET /api/schools/code/:code** - Buscar por código (Público)
+- **PUT /api/schools/:id** - Atualizar escola (Admin apenas)
+- **PATCH /api/schools/:id/deactivate** - Desativar (Admin apenas)
+- **PATCH /api/schools/:id/reactivate** - Reativar (Admin apenas)
+
+#### Controles de Acesso
+- **Admin**: Acesso completo (CRUD, ativação/desativação)
+- **Staff**: Visualização e listagem
+- **Público**: Apenas escolas ativas (dados limitados)
+- **Rate Limiting**: Aplicado em todas as rotas
+- **Validação**: Schemas rigorosos para todos os endpoints
+
+#### Integração com Sistema Existente
+- **Registro de Usuários**: Agora pode referenciar escolas existentes via `schoolId`
+- **Validação**: AuthService verifica se a escola existe e está ativa
+- **Relacionamentos**: Mantém integridade referencial com usuários, testes e tentativas
+
+### Como Usar
+
+```bash
+# 1. Criar uma escola (Admin)
+POST /api/schools
+{
+  "name": "Escola Municipal João Silva",
+  "code": "EMJS001",
+  "address": "Rua das Flores, 123 - Centro"
+}
+
+# 2. Listar escolas ativas (Público)
+GET /api/schools/active
+
+# 3. Buscar escola por código (Público)
+GET /api/schools/code/EMJS001
+
+# 4. Registrar usuário na escola
+POST /api/auth/register
+{
+  "name": "Professor Silva",
+  "email": "silva@escola.com",
+  "password": "senha123",
+  "role": "TEACHER",
+  "schoolId": "uuid-da-escola"
+}
+```
+
+---
+
 **Status Final**: 🚨 **PLANO DE EMERGÊNCIA ATIVO** - Sistema otimizado para **10.000 usuários simultâneos** no Render.
+
+**Última Atualização**: Sistema de Gestão de Escolas implementado - Usuários agora podem ser associados a escolas existentes.
 
 ---
 
 **Data da Análise**: 06/08/2025  
-**Analista**: StructorDB - Arquiteto de Dados IA  
-**Status**: 🔥 Otimização crítica em andamento  
+**Analista**: Vector - Arquiteto de Backend e Banco de Dados  
+**Status**: 🔥 Otimização crítica em andamento + 🏫 Sistema de Escolas Ativo  
 **Capacidade Alvo**: 8.000-10.000 usuários simultâneos no Render  
 **Próxima Revisão**: Após implementação das otimizações críticas (24-48h)

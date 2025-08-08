@@ -3,6 +3,7 @@ import { performance } from 'perf_hooks';
 import { logger } from '../utils/logger';
 import { cacheManager as cache } from '../utils/cache';
 import { config } from '../utils/config';
+import { queueManager } from '../utils/queue';
 
 
 // ===== INTERFACES =====
@@ -328,11 +329,20 @@ export const metricsMiddleware = async (
     const endpointMetrics = metricsCollector.getEndpointMetrics();
     const cacheMetrics = await cache.getMetrics();
 
+    // Métricas das filas
+    let queueMetrics = {};
+    try {
+      queueMetrics = await queueManager.getStats();
+    } catch (error) {
+      logger.debug('Filas não disponíveis para métricas');
+    }
+
     const metricsData = {
       timestamp: new Date(),
       system: systemMetrics,
       endpoints: endpointMetrics,
       cache: cacheMetrics,
+      queues: queueMetrics,
       process: {
         pid: process.pid,
         version: process.version,

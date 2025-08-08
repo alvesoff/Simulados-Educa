@@ -7,6 +7,7 @@ import { config } from './utils/config';
 import { logger } from './utils/logger';
 import { cacheManager as cache } from './utils/cache';
 import { initializeQueues, queueShutdown } from './utils/queue';
+import { setupQueueProcessors } from './utils/queueProcessors';
 import { setupGlobalErrorHandlers, errorHandler as errorHandlerMiddleware, notFoundHandler } from './middleware/errorHandler';
 import { monitoringMiddleware, healthCheckMiddleware, metricsMiddleware, alertsMiddleware } from './middleware/monitoring';
 // import rateLimiting from './middleware/rateLimiting'; // Usado nas rotas individuais
@@ -16,6 +17,7 @@ import authRoutes from './routes/auth';
 import testRoutes from './routes/tests';
 import questionRoutes from './routes/questions';
 import studentRoutes from './routes/students';
+import schoolRoutes from './routes/schools';
 
 // ===== CONFIGURAÇÃO DA APLICAÇÃO =====
 
@@ -196,7 +198,8 @@ app.get('/ping', (_req, res) => {
 
 // ===== ROTAS DA API =====
 
-// Prefixo para todas as rotas da API
+// ===== ROTAS DA API =====
+
 const API_PREFIX = '/api';
 
 // Rotas de autenticação
@@ -210,6 +213,9 @@ app.use(`${API_PREFIX}/questions`, questionRoutes);
 
 // Rotas de estudantes
 app.use(`${API_PREFIX}/students`, studentRoutes);
+
+// Rotas de escolas
+app.use(`${API_PREFIX}/schools`, schoolRoutes);
 
 // Rota de informações da API
 app.get(API_PREFIX, (_req, res) => {
@@ -257,8 +263,12 @@ export async function initializeApp(): Promise<void> {
     }
 
     // Inicializar filas
-  await initializeQueues();
+    await initializeQueues();
     logger.info('Filas inicializadas');
+
+    // Configurar processadores de filas
+    await setupQueueProcessors();
+    logger.info('Processadores de filas configurados');
 
     // Configura handlers globais de erro
     setupGlobalErrorHandlers();
