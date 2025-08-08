@@ -31,7 +31,6 @@ class CacheManager {
       db: 0,
       enableOfflineQueue: true, // Habilitado para evitar erros de conexão
       enableAutoPipelining: false, // Desabilitado para recursos limitados
-      retryDelayOnFailover: 500, // Delay aumentado entre tentativas
     });
 
     // Cache local para dados frequentemente acessados
