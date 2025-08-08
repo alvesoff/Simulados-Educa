@@ -442,8 +442,12 @@ class AuthService {
       expiresIn: '15m',
     });
 
-    // Refresh token (7 dias)
-    const refreshToken = jwt.sign(payload, config.JWT_SECRET, {
+    // Refresh token (7 dias) - adiciona timestamp único para evitar duplicatas
+    const refreshTokenPayload = {
+      ...payload,
+      jti: `${user.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // JWT ID único
+    };
+    const refreshToken = jwt.sign(refreshTokenPayload, config.JWT_SECRET, {
       expiresIn: '7d',
     });
 

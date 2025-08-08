@@ -127,14 +127,19 @@ router.post(
       userAgent: req.get('User-Agent'),
     });
 
-    const result = await authService.refreshTokens(req.body.refreshToken);
+    const tokens = await authService.refreshTokens(req.body.refreshToken);
 
     logger.auth('Token renovado com sucesso', {
       refreshToken: req.body.refreshToken,
       duration: Date.now() - startTime,
     });
 
-    return res.json(result);
+    return res.json({
+      success: true,
+      data: {
+        tokens
+      }
+    });
   })
 );
 
