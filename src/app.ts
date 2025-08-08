@@ -18,6 +18,8 @@ import testRoutes from './routes/tests';
 import questionRoutes from './routes/questions';
 import studentRoutes from './routes/students';
 import schoolRoutes from './routes/schools';
+import dashboardRoutes from './routes/dashboard';
+import userRoutes from './routes/users';
 
 // ===== CONFIGURAÇÃO DA APLICAÇÃO =====
 
@@ -216,6 +218,12 @@ app.use(`${API_PREFIX}/students`, studentRoutes);
 
 // Rotas de escolas
 app.use(`${API_PREFIX}/schools`, schoolRoutes);
+
+// Rotas de dashboard
+app.use(`${API_PREFIX}/dashboard`, dashboardRoutes);
+
+// Rotas de usuários
+app.use(`${API_PREFIX}/users`, userRoutes);
 
 // Rota de informações da API
 app.get(API_PREFIX, (_req, res) => {

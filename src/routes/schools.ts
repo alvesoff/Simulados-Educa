@@ -1,11 +1,14 @@
 import { Router } from 'express';
-import { UserRole } from '@prisma/client';
+import { UserRole, PrismaClient } from '@prisma/client';
 import schoolService from '../services/schoolService';
 import { authenticate } from '../middleware/auth';
-import { validateRequest } from '../middleware/errorHandler';
+import errorHandler from '../middleware/errorHandler';
+const { validateRequest, asyncHandler } = errorHandler;
 import { generalRateLimit, authRateLimit } from '../middleware/rateLimiting';
 import { z } from 'zod';
 import { logger } from '../utils/logger';
+
+const prisma = new PrismaClient();
 
 
 // Estende o tipo Request para incluir user
@@ -61,7 +64,7 @@ const schoolCodeParamsSchema = z.object({
 const listSchoolsQuerySchema = z.object({
   query: z.object({
     includeInactive: z.string().optional().transform(val => val === 'true'),
-  }),
+  }).optional(),
 });
 
 // ===== ROTAS =====
@@ -131,14 +134,14 @@ router.get(
         });
       }
 
-      const { includeInactive } = req.query;
+      const { includeInactive } = req.query || {};
 
       logger.system('Listagem de escolas solicitada', {
         userId: req.user.id,
         includeInactive,
       });
 
-      const includeInactiveBoolean = typeof includeInactive === 'string' ? includeInactive === 'true' : Boolean(includeInactive);
+      const includeInactiveBoolean = typeof includeInactive === 'string' ? includeInactive === 'true' : false;
       const schools = await schoolService.listSchools(includeInactiveBoolean);
 
       res.json({
@@ -421,5 +424,137 @@ router.patch(
       }
     }
   );
+
+/**
+ * @route GET /api/schools/:id/users
+ * @desc Obter usuários de uma escola
+ * @access Private (Admin e Staff)
+ */
+router.get(
+  '/:id/users',
+  generalRateLimit,
+  authenticate,
+  validateRequest(z.object({
+    params: z.object({
+      id: z.string().uuid('ID deve ser um UUID válido'),
+    }),
+    query: z.object({
+      page: z.string().optional().transform(val => val ? parseInt(val) : 1),
+      limit: z.string().optional().transform(val => val ? parseInt(val) : 10),
+      search: z.string().optional(),
+      role: z.enum(['ADMIN', 'STAFF', 'TEACHER', 'STUDENT']).optional(),
+      isActive: z.string().optional().transform(val => val === 'true'),
+    }).optional(),
+  })),
+  asyncHandler(async (req, res) => {
+    // Verifica se o usuário tem permissão
+    if (!req.user || (req.user.role !== 'ADMIN' && req.user.role !== 'STAFF')) {
+      return res.status(403).json({
+        success: false,
+        message: 'Acesso negado. Apenas administradores e staff podem listar usuários.',
+      });
+    }
+
+    const { id } = req.params;
+    const { page = 1, limit = 10, search, role, isActive } = req.query || {};
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+    const startTime = Date.now();
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID da escola é obrigatório',
+      });
+    }
+
+    try {
+      // Verificar se a escola existe
+      const school = await prisma.school.findUnique({
+        where: { id }
+      });
+
+      if (!school) {
+        return res.status(404).json({
+          success: false,
+          message: 'Escola não encontrada',
+        });
+      }
+
+      // Construir filtros
+      const where: any = { schoolId: id };
+      
+      if (role) where.role = role;
+      if (isActive !== undefined) where.isActive = isActive;
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } }
+        ];
+      }
+
+      // Buscar usuários com paginação
+      const [users, total] = await Promise.all([
+        prisma.user.findMany({
+          where,
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+            school: {
+              select: {
+                id: true,
+                name: true,
+                code: true
+              }
+            }
+          },
+          skip: (pageNum - 1) * limitNum,
+          take: limitNum,
+          orderBy: { createdAt: 'desc' }
+        }),
+        prisma.user.count({ where })
+      ]);
+
+      const totalPages = Math.ceil(total / limitNum);
+
+      logger.performance('Listagem de usuários por escola', {
+        userId: req.user.id,
+        schoolId: id,
+        filters: { role, isActive, search },
+        resultCount: users.length,
+        duration: Date.now() - startTime,
+      });
+
+      return res.json({
+         success: true,
+         data: {
+           items: users,
+           pagination: {
+             page,
+             limit,
+             total,
+             totalPages
+           }
+         },
+       });
+    } catch (error) {
+      logger.error('Erro ao listar usuários da escola', {
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+        userId: req.user.id,
+        schoolId: id,
+      });
+
+      return res.status(500).json({
+        success: false,
+        message: 'Erro interno do servidor',
+      });
+    }
+  })
+);
 
 export default router;
