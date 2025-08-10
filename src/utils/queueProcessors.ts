@@ -300,28 +300,70 @@ const invalidateCacheJob = async (job: Job<{ pattern: string }>): Promise<void> 
 /**
  * Sincroniza questões da API externa
  */
-const syncQuestionsJob = async (_job: Job): Promise<void> => {
+const syncQuestionsJob = async (job: Job<{ schoolId?: string; maxPages?: number }>): Promise<void> => {
   try {
-    logger.debug('Iniciando sincronização de questões');
+    logger.debug('Iniciando sincronização de questões', job.data);
 
-    // Aqui você implementaria a lógica de sincronização
-    // com a API externa de questões
-    
-    // Exemplo básico:
-    // const response = await fetch(config.QUESTIONS_API_URL);
-    // const questions = await response.json();
-    // 
-    // for (const questionData of questions) {
-    //   await prisma.question.upsert({
-    //     where: { externalId: questionData.id },
-    //     update: questionData,
-    //     create: questionData,
-    //   });
-    // }
+    const { schoolId, maxPages = 10 } = job.data;
 
-    logger.debug('Sincronização de questões concluída');
+    // Se não foi especificada uma escola, sincroniza para todas as escolas ativas
+    if (schoolId) {
+      // Importa questionService dinamicamente para evitar dependência circular
+      const { questionService } = await import('../services/questionService');
+      
+      const result = await questionService.syncQuestionsFromAPI(schoolId, maxPages);
+      
+      logger.debug('Sincronização de questões concluída para escola', {
+        schoolId,
+        imported: result.imported,
+        skipped: result.skipped,
+        errors: result.errors.length,
+      });
+    } else {
+      // Sincroniza para todas as escolas ativas
+      const activeSchools = await prisma.school.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true },
+      });
+
+      let totalImported = 0;
+      let totalSkipped = 0;
+      let totalErrors = 0;
+
+      for (const school of activeSchools) {
+        try {
+          const { questionService } = await import('../services/questionService');
+          const result = await questionService.syncQuestionsFromAPI(school.id, maxPages);
+          
+          totalImported += result.imported;
+          totalSkipped += result.skipped;
+          totalErrors += result.errors.length;
+
+          logger.debug('Sincronização concluída para escola', {
+            schoolId: school.id,
+            schoolName: school.name,
+            imported: result.imported,
+            skipped: result.skipped,
+            errors: result.errors.length,
+          });
+        } catch (schoolError) {
+          logger.error('Erro na sincronização para escola', schoolError, {
+            schoolId: school.id,
+            schoolName: school.name,
+          });
+          totalErrors++;
+        }
+      }
+
+      logger.debug('Sincronização de questões concluída para todas as escolas', {
+        schoolsProcessed: activeSchools.length,
+        totalImported,
+        totalSkipped,
+        totalErrors,
+      });
+    }
   } catch (error) {
-    logger.error('Erro na sincronização de questões', error);
+    logger.error('Erro na sincronização de questões', error, job.data);
     throw error;
   }
 };

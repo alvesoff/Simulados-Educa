@@ -73,6 +73,11 @@ const bulkOperationSchema = z.object({
   data: z.record(z.any()).optional(), // Dados para operação de update
 });
 
+const syncQuestionsSchema = z.object({
+  maxPages: z.coerce.number().int().min(1).max(200).optional().default(5), // Permite até 200 páginas para importar todas
+  fullSync: z.boolean().optional().default(false), // Flag para sincronização completa
+});
+
 // ===== ROTAS =====
 
 /**
@@ -428,39 +433,87 @@ router.post(
   })
 );
 
-// /**
-//  * @route   POST /api/questions/sync
-//  * @desc    Sincroniza questões com API externa
-//  * @access  Private (STAFF)
-//  */
-// router.post(
-//   '/sync',
-//   authenticate,
-//   authorize('STAFF'),
-//   rateLimiting.generalRateLimit,
-//   asyncHandler(async (req, res) => {
-//     const startTime = Date.now();
-//     
-//     logger.question('Sincronizando questões com API externa', {
-//       userId: req.user!.id,
-//     });
+/**
+ * @route   POST /api/questions/sync
+ * @desc    Sincroniza questões com API externa
+ * @access  Private (STAFF)
+ */
+router.post(
+  '/sync',
+  authenticate,
+  authorize('STAFF'),
+  rateLimiting.generalRateLimit,
+  validateRequest(syncQuestionsSchema),
+  asyncHandler(async (req, res) => {
+    const startTime = Date.now();
+    
+    logger.question('Sincronizando questões com API externa', {
+      userId: req.user!.id,
+      schoolId: req.user!.schoolId,
+    });
 
-//     const result = await questionService.syncWithExternalAPI(req.user!.id);
+    const maxPages = parseInt(req.body.maxPages as string) || 5;
+    const fullSync = req.body.fullSync === true;
+    
+    // Se fullSync for true, define maxPages para um valor alto para pegar todas as questões
+    const finalMaxPages = fullSync ? 200 : maxPages;
+    
+    const result = await questionService.syncQuestionsFromAPI(req.user!.schoolId, finalMaxPages);
 
-//     logger.question('Sincronização concluída', {
-//       userId: req.user!.id,
-//       syncedCount: result.synced,
-//       errorsCount: result.errors.length,
-//       duration: Date.now() - startTime,
-//     });
+    logger.question('Sincronização concluída', {
+      userId: req.user!.id,
+      schoolId: req.user!.schoolId,
+      importedCount: result.imported,
+      skippedCount: result.skipped,
+      errorsCount: result.errors.length,
+      duration: Date.now() - startTime,
+    });
 
-//     res.json({
-//       success: true,
-//       data: result,
-//       message: `${result.synced} questões sincronizadas com sucesso`,
-//     });
-//   })
-// );
+    res.json({
+      success: true,
+      data: result,
+      message: `${result.imported} questões sincronizadas com sucesso`,
+    });
+  })
+);
+
+/**
+ * @route   POST /api/questions/sync/full
+ * @desc    Sincroniza TODAS as questões da API externa
+ * @access  Private (STAFF)
+ */
+router.post(
+  '/sync/full',
+  authenticate,
+  authorize('STAFF'),
+  rateLimiting.generalRateLimit,
+  asyncHandler(async (req, res) => {
+    const startTime = Date.now();
+    
+    logger.question('Iniciando sincronização COMPLETA com API externa', {
+      userId: req.user!.id,
+      schoolId: req.user!.schoolId,
+    });
+
+    // Sincronização completa - busca todas as questões disponíveis
+    const result = await questionService.syncQuestionsFromAPI(req.user!.schoolId, 200);
+
+    logger.question('Sincronização COMPLETA concluída', {
+      userId: req.user!.id,
+      schoolId: req.user!.schoolId,
+      importedCount: result.imported,
+      skippedCount: result.skipped,
+      errorsCount: result.errors.length,
+      duration: Date.now() - startTime,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: `Sincronização completa: ${result.imported} questões importadas, ${result.skipped} ignoradas`,
+    });
+  })
+);
 
 /**
  * @route   POST /api/questions/bulk

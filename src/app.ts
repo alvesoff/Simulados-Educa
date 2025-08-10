@@ -16,8 +16,6 @@ import { monitoringMiddleware, healthCheckMiddleware, metricsMiddleware, alertsM
 import authRoutes from './routes/auth';
 import testRoutes from './routes/tests';
 import questionRoutes from './routes/questions';
-import externalQuestionRoutes from './routes/externalQuestions';
-import combinedQuestionRoutes from './routes/combinedQuestions';
 import studentRoutes from './routes/students';
 import schoolRoutes from './routes/schools';
 import dashboardRoutes from './routes/dashboard';
@@ -215,12 +213,6 @@ app.use(`${API_PREFIX}/tests`, testRoutes);
 // Rotas de questões
 app.use(`${API_PREFIX}/questions`, questionRoutes);
 
-// Rotas de questões externas
-app.use(`${API_PREFIX}/external-questions`, externalQuestionRoutes);
-
-// Rotas de questões combinadas (locais + externas)
-app.use(`${API_PREFIX}/combined-questions`, combinedQuestionRoutes);
-
 // Rotas de estudantes
 app.use(`${API_PREFIX}/students`, studentRoutes);
 
@@ -245,8 +237,6 @@ app.get(API_PREFIX, (_req, res) => {
         auth: `${API_PREFIX}/auth`,
         tests: `${API_PREFIX}/tests`,
         questions: `${API_PREFIX}/questions`,
-        externalQuestions: `${API_PREFIX}/external-questions`,
-        combinedQuestions: `${API_PREFIX}/combined-questions`,
         students: `${API_PREFIX}/students`,
       },
       documentation: 'https://docs.example.com',
