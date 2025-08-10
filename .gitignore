@@ -50,6 +50,7 @@ web_modules/
 
 # Painel de desenvolvimento
 painel-dev/
+Painel/
 
 # Optional npm cache directory
 .npm

@@ -281,6 +281,124 @@ class CacheManager {
     await this.delPattern(`question:*:school:${schoolId}`);
   }
 
+  // ===== MÉTODOS ESPECÍFICOS PARA API EXTERNA =====
+
+  /**
+   * Cache de questões externas com filtros (performance crítica)
+   */
+  async getExternalQuestions(filters: Record<string, any>) {
+    const cacheKey = this.generateExternalQuestionsKey(filters);
+    return this.get(cacheKey);
+  }
+
+  async setExternalQuestions(filters: Record<string, any>, questions: any, ttl: number = this.TTL.SHORT) {
+    const cacheKey = this.generateExternalQuestionsKey(filters);
+    return this.set(cacheKey, questions, ttl);
+  }
+
+  /**
+   * Cache de questão externa individual
+   */
+  async getExternalQuestion(id: string) {
+    return this.get(`external_question:${id}`);
+  }
+
+  async setExternalQuestion(id: string, question: any, ttl: number = this.TTL.MEDIUM) {
+    return this.set(`external_question:${id}`, question, ttl);
+  }
+
+  /**
+   * Cache de estatísticas da API externa
+   */
+  async getExternalStats() {
+    return this.get('external_api:stats');
+  }
+
+  async setExternalStats(stats: any, ttl: number = this.TTL.MEDIUM) {
+    return this.set('external_api:stats', stats, ttl);
+  }
+
+  /**
+   * Cache de conectividade da API externa
+   */
+  async getExternalApiHealth() {
+    return this.get('external_api:health');
+  }
+
+  async setExternalApiHealth(health: any, ttl: number = 60) { // 1 minuto
+    return this.set('external_api:health', health, ttl);
+  }
+
+  /**
+   * Invalida todo o cache da API externa
+   */
+  async invalidateExternalApiCache(): Promise<void> {
+    await Promise.all([
+      this.delPattern('external_questions:*'),
+      this.delPattern('external_question:*'),
+      this.delPattern('external_api:*'),
+    ]);
+  }
+
+  /**
+   * Invalida cache de questões externas por filtros específicos
+   */
+  async invalidateExternalQuestionsByFilter(filterKey: string, filterValue: any): Promise<void> {
+    // Invalida todas as consultas que contenham esse filtro
+    const patterns = [
+      `external_questions:*"${filterKey}":"${filterValue}"*`,
+      `external_questions:*"${filterKey}":${filterValue}*`,
+    ];
+    
+    for (const pattern of patterns) {
+      await this.delPattern(pattern);
+    }
+  }
+
+  /**
+   * Gera chave de cache consistente para questões externas
+   */
+  generateExternalQuestionsKey(filters: Record<string, any>): string {
+    // Ordena as chaves para garantir consistência
+    const sortedFilters = Object.keys(filters)
+      .sort()
+      .reduce((result, key) => {
+        result[key] = filters[key];
+        return result;
+      }, {} as Record<string, any>);
+    
+    return `external_questions:${JSON.stringify(sortedFilters)}`;
+  }
+
+  /**
+   * Cache inteligente com fallback para API externa
+   */
+  async getWithFallback<T>(
+    key: string,
+    fallbackFn: () => Promise<T>,
+    ttl: number = this.TTL.SHORT
+  ): Promise<T> {
+    try {
+      // Tenta buscar no cache primeiro
+      const cached = await this.get<T>(key);
+      if (cached !== null) {
+        return cached;
+      }
+
+      // Se não encontrou, executa a função de fallback
+      const result = await fallbackFn();
+      
+      // Salva no cache para próximas consultas
+      await this.set(key, result, ttl);
+      
+      return result;
+    } catch (error) {
+      console.error(`Erro no cache com fallback para chave ${key}:`, error);
+      // Em caso de erro, executa a função de fallback diretamente
+      return await fallbackFn();
+    }
+  }
+
   // ===== MÉTRICAS E MONITORAMENTO =====
 
   private cleanExpiredLocalCache(): void {
