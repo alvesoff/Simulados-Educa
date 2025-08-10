@@ -299,71 +299,19 @@ const invalidateCacheJob = async (job: Job<{ pattern: string }>): Promise<void> 
 
 /**
  * Sincroniza questões da API externa
+ * NOTA: Funcionalidade removida - agora implementada no frontend
  */
 const syncQuestionsJob = async (job: Job<{ schoolId?: string; maxPages?: number }>): Promise<void> => {
   try {
-    logger.debug('Iniciando sincronização de questões', job.data);
-
-    const { schoolId, maxPages = 10 } = job.data;
-
-    // Se não foi especificada uma escola, sincroniza para todas as escolas ativas
-    if (schoolId) {
-      // Importa questionService dinamicamente para evitar dependência circular
-      const { questionService } = await import('../services/questionService');
-      
-      const result = await questionService.syncQuestionsFromAPI(schoolId, maxPages);
-      
-      logger.debug('Sincronização de questões concluída para escola', {
-        schoolId,
-        imported: result.imported,
-        skipped: result.skipped,
-        errors: result.errors.length,
-      });
-    } else {
-      // Sincroniza para todas as escolas ativas
-      const activeSchools = await prisma.school.findMany({
-        where: { isActive: true },
-        select: { id: true, name: true },
-      });
-
-      let totalImported = 0;
-      let totalSkipped = 0;
-      let totalErrors = 0;
-
-      for (const school of activeSchools) {
-        try {
-          const { questionService } = await import('../services/questionService');
-          const result = await questionService.syncQuestionsFromAPI(school.id, maxPages);
-          
-          totalImported += result.imported;
-          totalSkipped += result.skipped;
-          totalErrors += result.errors.length;
-
-          logger.debug('Sincronização concluída para escola', {
-            schoolId: school.id,
-            schoolName: school.name,
-            imported: result.imported,
-            skipped: result.skipped,
-            errors: result.errors.length,
-          });
-        } catch (schoolError) {
-          logger.error('Erro na sincronização para escola', schoolError, {
-            schoolId: school.id,
-            schoolName: school.name,
-          });
-          totalErrors++;
-        }
-      }
-
-      logger.debug('Sincronização de questões concluída para todas as escolas', {
-        schoolsProcessed: activeSchools.length,
-        totalImported,
-        totalSkipped,
-        totalErrors,
-      });
-    }
+    logger.debug('Job de sincronização de questões foi removido - funcionalidade movida para o frontend', job.data);
+    
+    // Job removido - a sincronização agora é feita diretamente no frontend
+    logger.warn('Tentativa de executar job de sincronização removido', {
+      jobData: job.data,
+      message: 'A sincronização de questões foi movida para o frontend'
+    });
   } catch (error) {
-    logger.error('Erro na sincronização de questões', error, job.data);
+    logger.error('Erro no job de sincronização removido', error, job.data);
     throw error;
   }
 };

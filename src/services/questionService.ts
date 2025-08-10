@@ -1,7 +1,6 @@
-import { PrismaClient, Question, Difficulty } from '@prisma/client';
+import { PrismaClient, Question } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { cacheManager as cache } from '../utils/cache';
-import { config } from '../utils/config';
 import {
   QuestionCreateRequest,
   QuestionUpdateRequest,
@@ -10,7 +9,6 @@ import {
   QuestionFilters,
 } from '../types';
 import {
-  AppError,
   NotFoundError,
   ForbiddenError,
   ValidationError,
