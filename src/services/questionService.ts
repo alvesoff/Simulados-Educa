@@ -34,23 +34,7 @@ const prisma = new PrismaClient({
 //   };
 // }
 
-interface QuestionImportResult {
-  imported: number;
-  skipped: number;
-  errors: string[];
-}
 
-interface ExternalQuestion {
-  id?: string;
-  question: string;
-  options: string[];
-  correctAnswer: string;
-  difficulty: Difficulty;
-  subject: string;
-  topic: string;
-  explanation?: string;
-  tags?: string[];
-}
 
 // ===== CLASSE PRINCIPAL =====
 
@@ -395,302 +379,7 @@ class QuestionService {
     }
   }
 
-  /**
-   * Importa questões de fonte externa
-   */
-  async importQuestions(
-    questions: ExternalQuestion[],
-    schoolId: string,
-    creatorId: string
-  ): Promise<QuestionImportResult> {
-    try {
-      logger.system('Importando questões', {
-        count: questions.length,
-        schoolId,
-        creatorId,
-      });
 
-      const result: QuestionImportResult = {
-        imported: 0,
-        skipped: 0,
-        errors: [],
-      };
-
-      for (const questionData of questions) {
-        try {
-          // Valida dados da questão
-          this.validateQuestionData(questionData);
-
-          // Verifica duplicatas por externalId primeiro, depois por statement
-          let existing = null;
-          
-          if (questionData.id) {
-            existing = await prisma.question.findFirst({
-              where: {
-                externalId: questionData.id,
-              },
-            });
-          }
-          
-          if (!existing) {
-            existing = await prisma.question.findFirst({
-              where: {
-                statement: questionData.question,
-              },
-            });
-          }
-
-          if (existing) {
-            result.skipped++;
-            continue;
-          }
-
-          // Converte correctAnswer para número (índice)
-          const correctAnswerIndex = questionData.options.findIndex(
-            option => option === questionData.correctAnswer
-          );
-
-          if (correctAnswerIndex === -1) {
-            throw new Error('Resposta correta não encontrada nas opções');
-          }
-
-          // Cria a questão
-          await prisma.question.create({
-            data: {
-              statement: questionData.question.trim(),
-              alternatives: questionData.options.map(opt => opt.trim()),
-              correctAnswer: correctAnswerIndex,
-              difficulty: questionData.difficulty,
-              subject: questionData.subject.trim(),
-              topic: questionData.topic.trim(),
-              tags: questionData.tags || [],
-              externalId: questionData.id || null,
-            },
-          });
-
-          result.imported++;
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-          result.errors.push(
-            `Erro na questão "${questionData.question.substring(0, 50)}...": ${errorMessage}`
-          );
-        }
-      }
-
-      // Invalida cache de questões
-      await cache.del('questions');
-
-      logger.system('Importação de questões concluída', {
-        imported: result.imported,
-        skipped: result.skipped,
-        errors: result.errors.length,
-        schoolId,
-      });
-
-      return result;
-    } catch (error) {
-      logger.error('Erro na importação de questões', error, {
-        count: questions.length,
-        schoolId,
-        creatorId,
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Sincroniza questões com API externa
-   */
-  async syncQuestionsFromAPI(schoolId: string, maxPages: number = 5): Promise<QuestionImportResult> {
-    try {
-      logger.system('Sincronizando questões da API externa', { schoolId, maxPages });
-
-      const externalQuestions: ExternalQuestion[] = [];
-
-      if (!config.QUESTIONS_API_URL) {
-        throw new AppError('URL da API externa não configurada');
-      }
-
-      try {
-        let currentPage = 1;
-        let hasMore = true;
-        const pageSize = maxPages > 50 ? 20 : 10; // Aumenta pageSize para sincronizações grandes
-
-        while (hasMore && currentPage <= maxPages) {
-          logger.system(`Buscando página ${currentPage} da API externa`, { 
-            page: currentPage, 
-            pageSize 
-          });
-
-          const url = `${config.QUESTIONS_API_URL}?page=${currentPage}&limit=${pageSize}`;
-          
-          // Cria um AbortController para timeout
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 30000);
-          
-          const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
-            signal: controller.signal,
-          });
-          
-          clearTimeout(timeoutId);
-
-          if (!response.ok) {
-            throw new Error(`API externa retornou status ${response.status}: ${response.statusText}`);
-          }
-
-          const data = await response.json() as any;
-          
-          if (!data.items || !Array.isArray(data.items)) {
-            throw new Error('Formato de resposta inválido da API externa');
-          }
-
-          // Converte questões da API externa para o formato interno
-          for (const item of data.items) {
-            try {
-              const convertedQuestion = this.convertExternalQuestion(item);
-              externalQuestions.push(convertedQuestion);
-            } catch (conversionError) {
-              logger.warn('Erro ao converter questão da API externa', {
-                error: conversionError instanceof Error ? conversionError.message : 'Erro desconhecido',
-                questionId: item.id,
-                statement: item.statement?.substring(0, 50),
-              });
-            }
-          }
-
-          // Verifica se há mais páginas
-          hasMore = data.pagination?.hasMore === true;
-          currentPage++;
-
-          // Pausa entre requisições - menor para sincronizações grandes
-          if (hasMore && currentPage <= maxPages) {
-            const delay = maxPages > 50 ? 50 : 100; // Reduz delay para sincronizações grandes
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
-        }
-
-        logger.system('Busca na API externa concluída', {
-          totalQuestions: externalQuestions.length,
-          pagesProcessed: currentPage - 1,
-        });
-
-      } catch (error) {
-        logger.error('Erro ao buscar questões da API externa', error);
-        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-        throw new AppError(`Erro na sincronização com API externa: ${errorMessage}`);
-      }
-
-      // Busca um usuário STAFF da escola para ser o criador
-      const creator = await prisma.user.findFirst({
-        where: {
-          schoolId,
-          role: 'STAFF',
-        },
-      });
-
-      if (!creator) {
-        throw new ValidationError('Nenhum usuário STAFF encontrado na escola');
-      }
-
-      return await this.importQuestions(externalQuestions, schoolId, creator.id);
-    } catch (error) {
-      logger.error('Erro na sincronização de questões', error, { schoolId });
-      throw error;
-    }
-  }
-
-  /**
-   * Converte questão da API externa para formato interno
-   */
-  private convertExternalQuestion(externalItem: any): ExternalQuestion {
-    try {
-      // Mapeia dificuldade da API externa para o formato interno
-      const difficultyMap: Record<string, Difficulty> = {
-        'Fácil': 'EASY',
-        'Facil': 'EASY',
-        'Easy': 'EASY',
-        'Médio': 'MEDIUM',
-        'Medio': 'MEDIUM',
-        'Medium': 'MEDIUM',
-        'Difícil': 'HARD',
-        'Dificil': 'HARD',
-        'Hard': 'HARD',
-      };
-
-      // Mapeia disciplinas da API externa para formato padronizado
-      const subjectMap: Record<string, string> = {
-        'Português': 'Português',
-        'PortuguÃªs': 'Português',
-        'Matemática': 'Matemática',
-        'MatemÃ¡tica': 'Matemática',
-        'História': 'História',
-        'HistÃ³ria': 'História',
-        'Geografia': 'Geografia',
-        'Ciências': 'Ciências',
-        'CiÃªncias': 'Ciências',
-        'Inglês': 'Inglês',
-        'InglÃªs': 'Inglês',
-        'Educação Física': 'Educação Física',
-        'EducaÃ§Ã£o FÃ­sica': 'Educação Física',
-        'Arte': 'Arte',
-        'Artes': 'Arte',
-      };
-
-      // Limpa e decodifica o HTML das strings
-      const cleanHtml = (text: string): string => {
-        if (!text) return '';
-        return text
-          .replace(/\\u003c/g, '<')
-          .replace(/\\u003e/g, '>')
-          .replace(/\\u0026/g, '&')
-          .replace(/&nbsp;/g, ' ')
-          .replace(/<[^>]*>/g, '') // Remove tags HTML
-          .replace(/\s+/g, ' ') // Normaliza espaços
-          .trim();
-      };
-
-      const statement = cleanHtml(externalItem.statement);
-      const alternatives = externalItem.alternatives?.map((alt: string) => cleanHtml(alt)) || [];
-      const difficulty = difficultyMap[externalItem.nivelDificuldade] || 'MEDIUM';
-      const subject = subjectMap[externalItem.disciplina] || externalItem.disciplina || 'Geral';
-      
-      // Gera tópico baseado no ano escolar se não estiver disponível
-      const topic = externalItem.topic || `${externalItem.anoEscolar}º Ano` || 'Geral';
-
-      // Valida dados básicos
-      if (!statement || statement.length < 10) {
-        throw new Error('Statement inválido ou muito curto');
-      }
-
-      if (!alternatives || alternatives.length < 2) {
-        throw new Error('Alternativas insuficientes');
-      }
-
-      if (externalItem.correctAnswer < 0 || externalItem.correctAnswer >= alternatives.length) {
-        throw new Error('Índice de resposta correta inválido');
-      }
-
-      return {
-        id: externalItem.id,
-        question: statement,
-        options: alternatives,
-        correctAnswer: alternatives[externalItem.correctAnswer],
-        difficulty,
-        subject,
-        topic,
-        explanation: externalItem.explanation || undefined,
-        tags: externalItem.tags || [],
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-      throw new Error(`Erro ao converter questão: ${errorMessage}`);
-    }
-  }
 
   /**
    * Obtém estatísticas de uso da questão
@@ -909,19 +598,25 @@ class QuestionService {
    * Valida dados da questão
    */
   private validateQuestionData(data: any): void {
-    if (!data.statement || data.statement.trim().length < 10) {
-          throw new ValidationError('Questão deve ter pelo menos 10 caracteres');
-        }
-
-        if (!data.alternatives || !Array.isArray(data.alternatives) || data.alternatives.length < 2) {
-          throw new ValidationError('Questão deve ter pelo menos 2 opções');
+    if (!data.statement || typeof data.statement !== 'string' || data.statement.trim().length < 10) {
+      throw new ValidationError('Questão deve ter pelo menos 10 caracteres');
     }
 
-    if (data.alternatives.length > 6) {
+    if (!data.alternatives || !Array.isArray(data.alternatives) || data.alternatives.length < 2) {
+      throw new ValidationError('Questão deve ter pelo menos 2 opções');
+    }
+
+    // Valida se todas as alternativas são strings válidas
+    const validAlternatives = data.alternatives.filter((alt: any) => alt && typeof alt === 'string' && alt.trim().length > 0);
+    if (validAlternatives.length < 2) {
+      throw new ValidationError('Questão deve ter pelo menos 2 opções válidas');
+    }
+
+    if (validAlternatives.length > 6) {
       throw new ValidationError('Uma questão pode ter no máximo 6 opções');
     }
 
-    if (data.correctAnswer < 0 || data.correctAnswer >= data.alternatives.length) {
+    if (typeof data.correctAnswer !== 'number' || data.correctAnswer < 0 || data.correctAnswer >= validAlternatives.length) {
       throw new ValidationError('O índice da resposta correta deve ser válido');
     }
 
@@ -929,17 +624,17 @@ class QuestionService {
       throw new ValidationError('Dificuldade deve ser EASY, MEDIUM ou HARD');
     }
 
-    if (!data.subject || data.subject.trim().length < 2) {
+    if (!data.subject || typeof data.subject !== 'string' || data.subject.trim().length < 2) {
       throw new ValidationError('Assunto deve ter pelo menos 2 caracteres');
     }
 
-    if (!data.topic || data.topic.trim().length < 2) {
-      throw new ValidationError('Tópico deve ter pelo menos 2 caracteres');
+    if (data.topic && (typeof data.topic !== 'string' || data.topic.trim().length < 2)) {
+      throw new ValidationError('Tópico deve ter pelo menos 2 caracteres quando fornecido');
     }
 
-    // Verifica duplicatas nas opções
-    const uniqueOptions = new Set(data.alternatives.map((opt: string) => opt.trim().toLowerCase()));
-    if (uniqueOptions.size !== data.alternatives.length) {
+    // Verifica duplicatas nas opções válidas
+    const uniqueOptions = new Set(validAlternatives.map((opt: string) => opt.trim().toLowerCase()));
+    if (uniqueOptions.size !== validAlternatives.length) {
       throw new ValidationError('Opções não podem ser duplicadas');
     }
   }

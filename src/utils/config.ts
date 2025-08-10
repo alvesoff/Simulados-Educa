@@ -26,9 +26,6 @@ const configSchema = z.object({
   // URLs externas
   FRONTEND_URL: z.string().default('http://localhost:3001'),
   
-  // API de questões
-  QUESTIONS_API_URL: z.string().default('https://api-questao-1.onrender.com/api/v1/questoes'),
-  
   // Segurança
   BCRYPT_ROUNDS: z.string().default('12').transform(Number),
   

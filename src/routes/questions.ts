@@ -60,22 +60,10 @@ const questionFiltersSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 });
 
-const importQuestionsSchema = z.object({
-  source: z.enum(['file', 'url', 'api']),
-  data: z.any(), // Pode ser arquivo, URL ou dados da API
-  format: z.enum(['json', 'csv', 'xlsx']).optional().default('json'),
-  mapping: z.record(z.string()).optional(), // Mapeamento de campos
-});
-
 const bulkOperationSchema = z.object({
   questionIds: z.array(z.string().uuid()).min(1, 'Pelo menos uma questão deve ser selecionada'),
   operation: z.enum(['delete', 'update', 'export']),
   data: z.record(z.any()).optional(), // Dados para operação de update
-});
-
-const syncQuestionsSchema = z.object({
-  maxPages: z.coerce.number().int().min(1).max(200).optional().default(5), // Permite até 200 páginas para importar todas
-  fullSync: z.boolean().optional().default(false), // Flag para sincronização completa
 });
 
 // ===== ROTAS =====
@@ -390,130 +378,7 @@ router.get(
   })
 );
 
-/**
- * @route   POST /api/questions/import
- * @desc    Importa questões de fonte externa
- * @access  Private (ADMIN, STAFF)
- */
-router.post(
-  '/import',
-  authenticate,
-  authorize('STAFF'),
-  authorizeSchool,
-  rateLimiting.generalRateLimit,
-  validateRequest(importQuestionsSchema),
-  asyncHandler(async (req, res) => {
-    const startTime = Date.now();
-    
-    logger.question('Importando questões', {
-      userId: req.user!.id,
-      source: req.body.source,
-      format: req.body.format,
-    });
 
-    const result = await questionService.importQuestions(
-      req.body.data,
-      req.user!.schoolId,
-      req.user!.id
-    );
-
-    logger.question('Questões importadas com sucesso', {
-      userId: req.user!.id,
-      importedCount: result.imported,
-      skippedCount: result.skipped,
-      errorsCount: result.errors.length,
-      duration: Date.now() - startTime,
-    });
-
-    res.json({
-      success: true,
-      data: result,
-      message: `${result.imported} questões importadas com sucesso`,
-    });
-  })
-);
-
-/**
- * @route   POST /api/questions/sync
- * @desc    Sincroniza questões com API externa
- * @access  Private (STAFF)
- */
-router.post(
-  '/sync',
-  authenticate,
-  authorize('STAFF'),
-  rateLimiting.generalRateLimit,
-  validateRequest(syncQuestionsSchema),
-  asyncHandler(async (req, res) => {
-    const startTime = Date.now();
-    
-    logger.question('Sincronizando questões com API externa', {
-      userId: req.user!.id,
-      schoolId: req.user!.schoolId,
-    });
-
-    const maxPages = parseInt(req.body.maxPages as string) || 5;
-    const fullSync = req.body.fullSync === true;
-    
-    // Se fullSync for true, define maxPages para um valor alto para pegar todas as questões
-    const finalMaxPages = fullSync ? 200 : maxPages;
-    
-    const result = await questionService.syncQuestionsFromAPI(req.user!.schoolId, finalMaxPages);
-
-    logger.question('Sincronização concluída', {
-      userId: req.user!.id,
-      schoolId: req.user!.schoolId,
-      importedCount: result.imported,
-      skippedCount: result.skipped,
-      errorsCount: result.errors.length,
-      duration: Date.now() - startTime,
-    });
-
-    res.json({
-      success: true,
-      data: result,
-      message: `${result.imported} questões sincronizadas com sucesso`,
-    });
-  })
-);
-
-/**
- * @route   POST /api/questions/sync/full
- * @desc    Sincroniza TODAS as questões da API externa
- * @access  Private (STAFF)
- */
-router.post(
-  '/sync/full',
-  authenticate,
-  authorize('STAFF'),
-  rateLimiting.generalRateLimit,
-  asyncHandler(async (req, res) => {
-    const startTime = Date.now();
-    
-    logger.question('Iniciando sincronização COMPLETA com API externa', {
-      userId: req.user!.id,
-      schoolId: req.user!.schoolId,
-    });
-
-    // Sincronização completa - busca todas as questões disponíveis
-    const result = await questionService.syncQuestionsFromAPI(req.user!.schoolId, 200);
-
-    logger.question('Sincronização COMPLETA concluída', {
-      userId: req.user!.id,
-      schoolId: req.user!.schoolId,
-      importedCount: result.imported,
-      skippedCount: result.skipped,
-      errorsCount: result.errors.length,
-      duration: Date.now() - startTime,
-    });
-
-    res.json({
-      success: true,
-      data: result,
-      message: `Sincronização completa: ${result.imported} questões importadas, ${result.skipped} ignoradas`,
-    });
-  })
-);
 
 /**
  * @route   POST /api/questions/bulk
