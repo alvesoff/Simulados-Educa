@@ -41,8 +41,22 @@ app.use(helmet({
 }));
 
 // CORS configurado para produção
+const allowedOrigins = [
+  config.FRONTEND_URL, // URL do desenvolvimento
+  'https://simulados-educandario.onrender.com' // URL de produção
+];
+
 app.use(cors({
-  origin: config.FRONTEND_URL,
+  origin: (origin, callback) => {
+    // Permite requisições sem origin (ex: aplicações mobile, Postman)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    return callback(new Error('Não permitido pelo CORS'), false);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
