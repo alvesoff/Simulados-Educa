@@ -7,6 +7,7 @@ import { generalRateLimit, authRateLimit } from '../middleware/rateLimiting';
 import { z } from 'zod';
 import { logger } from '../utils/logger';
 import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -288,7 +289,6 @@ router.post(
       }
 
       // Hash da senha
-      const bcrypt = require('bcrypt');
       const hashedPassword = await bcrypt.hash(password, 12);
 
       // Criar usuário
