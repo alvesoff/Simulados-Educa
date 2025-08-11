@@ -266,8 +266,14 @@ class TestService {
           where.schoolId = filters.schoolId;
         }
       } else {
-        // Outros usuários só veem testes da própria escola
+        // Outros usuários só veem:
+        // 1. Seus próprios testes
+        // 2. Testes colaborativos da própria escola
         where.schoolId = user.schoolId;
+        where.OR = [
+          { createdById: userId }, // Testes criados pelo usuário
+          { type: 'COLLABORATIVE' } // Testes colaborativos da escola
+        ];
       }
 
       // Aplicar filtros específicos
