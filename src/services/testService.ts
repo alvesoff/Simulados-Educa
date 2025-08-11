@@ -1164,8 +1164,18 @@ class TestService {
       throw new ForbiddenError('Acesso negado ao teste');
     }
 
-    // Professores só podem acessar testes ativos (se não forem criadores)
-    if (user.role === 'TEACHER' && test.createdById !== userId && test.status !== 'ACTIVE') {
+    // Criador pode acessar seus próprios testes
+    if (test.createdById === userId) {
+      return;
+    }
+
+    // Professores podem acessar testes colaborativos da mesma escola
+    if (user.role === 'TEACHER' && test.type === 'COLLABORATIVE' && test.schoolId === user.schoolId) {
+      return;
+    }
+
+    // Professores só podem acessar testes ativos (se não forem criadores nem colaborativos)
+    if (user.role === 'TEACHER' && test.status !== 'ACTIVE') {
       throw new ForbiddenError('Teste não está disponível');
     }
   }
