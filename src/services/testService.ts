@@ -1165,7 +1165,7 @@ class TestService {
     }
 
     // Professores só podem acessar testes ativos (se não forem criadores)
-    if (user.role === 'TEACHER' && test.creatorId !== userId && test.status !== 'ACTIVE') {
+    if (user.role === 'TEACHER' && test.createdById !== userId && test.status !== 'ACTIVE') {
       throw new ForbiddenError('Teste não está disponível');
     }
   }
@@ -1187,18 +1187,13 @@ class TestService {
       return;
     }
 
-    // Apenas STAFF e criadores podem editar testes
-    if (user.role === 'TEACHER' && test.creatorId !== userId) {
-      throw new ForbiddenError('Apenas o criador do teste pode editá-lo');
-    }
-
     // Criador pode editar seus próprios testes
-    if (test.creatorId === userId) {
+    if (test.createdById === userId) {
       return;
     }
 
     // Professores podem editar testes colaborativos da mesma escola
-    if (test.type === 'COLLABORATIVE' && test.schoolId === user.schoolId) {
+    if (user.role === 'TEACHER' && test.type === 'COLLABORATIVE' && test.schoolId === user.schoolId) {
       return;
     }
 
