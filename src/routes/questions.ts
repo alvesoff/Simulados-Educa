@@ -10,6 +10,7 @@ import errorHandler from '../middleware/errorHandler';
 const { asyncHandler, validateRequest } = errorHandler;
 import { logger } from '../utils/logger';
 import { QuestionFilters } from '../types';
+import { idSchema, idsArraySchema, paginationSchema } from '../utils/validation';
 
 // ===== INICIALIZAÇÃO =====
 
@@ -48,20 +49,18 @@ const updateQuestionSchema = z.object({
 });
 
 const questionFiltersSchema = z.object({
-  schoolId: z.string().uuid().optional(),
+  schoolId: idSchema.optional(),
   subject: z.string().optional(),
   topic: z.string().optional(),
   difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
   type: z.enum(['MULTIPLE_CHOICE', 'TRUE_FALSE', 'ESSAY']).optional(),
-  creatorId: z.string().uuid().optional(),
+  creatorId: idSchema.optional(),
   tags: z.string().optional(), // tags separadas por vírgula
   search: z.string().optional(),
-  page: z.coerce.number().int().min(1).optional().default(1),
-  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
-});
+}).merge(paginationSchema);
 
 const bulkOperationSchema = z.object({
-  questionIds: z.array(z.string().uuid()).min(1, 'Pelo menos uma questão deve ser selecionada'),
+  questionIds: idsArraySchema,
   operation: z.enum(['delete', 'update', 'export']),
   data: z.record(z.any()).optional(), // Dados para operação de update
 });
