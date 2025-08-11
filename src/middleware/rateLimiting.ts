@@ -131,7 +131,7 @@ export const authRateLimit = rateLimit({
   max: config.RATE_LIMITS.AUTH.max,
   message: {
     success: false,
-    error: 'Muitas tentativas de login. Tente novamente em 15 minutos.',
+    error: 'Muitas tentativas de login. Tente novamente em 2 minutos.',
     timestamp: new Date(),
   },
   standardHeaders: true,
@@ -165,7 +165,7 @@ export const authRateLimit = rateLimit({
     
     res.status(429).json({
       success: false,
-      error: 'Muitas tentativas de login. Tente novamente em 15 minutos.',
+      error: 'Muitas tentativas de login. Tente novamente em 2 minutos.',
       timestamp: new Date(),
     });
   },

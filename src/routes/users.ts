@@ -14,44 +14,37 @@ const prisma = new PrismaClient();
 // ===== SCHEMAS DE VALIDAÇÃO =====
 
 const listUsersQuerySchema = z.object({
-  query: z.object({
-    page: z.string().optional().transform(val => val ? parseInt(val) : 1),
-    limit: z.string().optional().transform(val => val ? parseInt(val) : 10),
-    role: z.enum(['ADMIN', 'STAFF', 'TEACHER', 'STUDENT']).optional(),
-    schoolId: z.string().uuid().optional(),
-    isActive: z.string().optional().transform(val => val === 'true'),
-    search: z.string().optional(),
-  }).optional(),
+  page: z.string().optional().transform(val => val ? parseInt(val) : 1),
+  limit: z.string().optional().transform(val => val ? parseInt(val) : 10),
+  role: z.enum(['ADMIN', 'STAFF', 'TEACHER', 'STUDENT']).optional(),
+  schoolId: z.string().cuid().optional(),
+  isActive: z.string().optional().transform(val => val === 'true'),
+  search: z.string().optional(),
 });
 
 const userParamsSchema = z.object({
-  params: z.object({
-    id: z.string().uuid('ID deve ser um UUID válido'),
-  }),
+  id: z.string().uuid('ID deve ser um UUID válido'),
 });
 
 const createUserSchema = z.object({
-  body: z.object({
-    name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100),
-    email: z.string().email('Email inválido').max(255),
-    password: z.string().min(8, 'Senha deve ter pelo menos 8 caracteres').max(128),
-    role: z.enum(['ADMIN', 'STAFF', 'TEACHER', 'STUDENT']),
-    schoolId: z.string().uuid().optional(),
-    isActive: z.boolean().optional().default(true),
-  }),
+  name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100),
+  email: z.string().email('Email inválido').max(255),
+  password: z.string().min(8, 'Senha deve ter pelo menos 8 caracteres').max(128),
+  role: z.enum(['ADMIN', 'STAFF', 'TEACHER', 'STUDENT']),
+  schoolId: z.string().cuid('Escola deve ser um ID válido').optional(),
+  isActive: z.boolean().optional().default(true),
 });
 
-const updateUserSchema = z.object({
-  body: z.object({
-    name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100).optional(),
-    email: z.string().email('Email inválido').max(255).optional(),
-    role: z.enum(['ADMIN', 'STAFF', 'TEACHER', 'STUDENT']).optional(),
-    schoolId: z.string().uuid().optional(),
-    isActive: z.boolean().optional(),
-  }),
-  params: z.object({
-    id: z.string().uuid('ID deve ser um UUID válido'),
-  }),
+const updateUserBodySchema = z.object({
+  name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100).optional(),
+  email: z.string().email('Email inválido').max(255).optional(),
+  role: z.enum(['ADMIN', 'STAFF', 'TEACHER', 'STUDENT']).optional(),
+  schoolId: z.string().cuid('Escola deve ser um ID válido').optional(),
+  isActive: z.boolean().optional(),
+});
+
+const updateUserStatusSchema = z.object({
+  isActive: z.boolean(),
 });
 
 // ===== ROTAS =====
@@ -65,7 +58,7 @@ router.get(
   '/',
   generalRateLimit,
   authenticate,
-  validateRequest(listUsersQuerySchema),
+  validateRequest(listUsersQuerySchema, 'query'),
   asyncHandler(async (req, res) => {
     // Verifica se o usuário tem permissão
     if (!req.user || (req.user.role !== UserRole.ADMIN && req.user.role !== UserRole.STAFF)) {
@@ -166,7 +159,7 @@ router.get(
   '/:id',
   generalRateLimit,
   authenticate,
-  validateRequest(userParamsSchema),
+  validateRequest(userParamsSchema, 'params'),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const startTime = Date.now();
@@ -247,18 +240,25 @@ router.post(
   '/',
   authRateLimit,
   authenticate,
-  validateRequest(createUserSchema),
+  validateRequest(createUserSchema, 'body'),
   asyncHandler(async (req, res) => {
-    // Verifica se o usuário é admin
-    if (!req.user || req.user.role !== UserRole.ADMIN) {
+    // Verifica se o usuário é admin ou staff
+    if (!req.user || (req.user.role !== UserRole.ADMIN && req.user.role !== UserRole.STAFF)) {
       return res.status(403).json({
         success: false,
-        message: 'Acesso negado. Apenas administradores podem criar usuários.',
+        message: 'Acesso negado. Apenas administradores e staff podem criar usuários.',
       });
     }
 
     const startTime = Date.now();
     const { name, email, password, role, schoolId, isActive } = req.body;
+
+    // LOG TEMPORÁRIO: Verificar dados recebidos
+    console.log('🔍 DEBUG - Dados recebidos na criação de usuário:');
+    console.log('📝 Body completo:', JSON.stringify(req.body, null, 2));
+    console.log('🏫 schoolId recebido:', schoolId);
+    console.log('📊 Tipo do schoolId:', typeof schoolId);
+    console.log('📏 Tamanho do schoolId:', schoolId ? schoolId.length : 'undefined/null');
 
     try {
       // Verificar se email já existe
@@ -352,7 +352,8 @@ router.put(
   '/:id',
   authRateLimit,
   authenticate,
-  validateRequest(updateUserSchema),
+  validateRequest(userParamsSchema, 'params'),
+  validateRequest(updateUserBodySchema, 'body'),
   asyncHandler(async (req, res) => {
     // Verifica se o usuário é admin
     if (!req.user || req.user.role !== UserRole.ADMIN) {
@@ -468,7 +469,7 @@ router.delete(
   '/:id',
   authRateLimit,
   authenticate,
-  validateRequest(userParamsSchema),
+  validateRequest(userParamsSchema, 'params'),
   asyncHandler(async (req, res) => {
     // Verifica se o usuário é admin
     if (!req.user || req.user.role !== UserRole.ADMIN) {
@@ -549,14 +550,8 @@ router.patch(
   '/:id/status',
   authRateLimit,
   authenticate,
-  validateRequest(z.object({
-    params: z.object({
-      id: z.string().uuid('ID deve ser um UUID válido'),
-    }),
-    body: z.object({
-      isActive: z.boolean(),
-    }),
-  })),
+  validateRequest(userParamsSchema, 'params'),
+  validateRequest(updateUserStatusSchema, 'body'),
   asyncHandler(async (req, res) => {
     // Verifica se o usuário é admin
     if (!req.user || req.user.role !== UserRole.ADMIN) {

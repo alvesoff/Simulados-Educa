@@ -436,7 +436,7 @@ class TestService {
   }
 
   /**
-   * Adiciona questões ao teste
+   * Adiciona questões ao teste (aceita IDs ou dados completos)
    */
   async addQuestionsToTest(
     testId: string,
@@ -444,13 +444,26 @@ class TestService {
     userId: string
   ): Promise<TestResponse> {
     try {
-      logger.info('Adicionando questões ao teste', { testId, questionIds, userId });
+      logger.info('=== INÍCIO addQuestionsToTest ===', { 
+        testId, 
+        questionIds, 
+        questionIdsCount: questionIds.length,
+        questionIdsType: typeof questionIds,
+        userId 
+      });
 
       const test = await prisma.test.findUnique({
         where: { id: testId },
         include: {
           questions: true,
         },
+      });
+
+      logger.info('Teste encontrado:', { 
+        testFound: !!test, 
+        testId: test?.id,
+        testStatus: test?.status,
+        existingQuestionsCount: test?.questions?.length 
       });
 
       if (!test) {
@@ -464,6 +477,8 @@ class TestService {
       }
 
       // Verificar se as questões existem
+      logger.info('Buscando questões no banco:', { questionIds });
+      
       const questions = await prisma.question.findMany({
         where: {
           id: {
@@ -472,14 +487,28 @@ class TestService {
         },
       });
 
+      logger.info('Questões encontradas no banco:', { 
+        questionsFound: questions.length,
+        questionsExpected: questionIds.length,
+        foundQuestionIds: questions.map(q => q.id),
+        requestedQuestionIds: questionIds
+      });
+
       if (questions.length !== questionIds.length) {
-        throw new NotFoundError('Uma ou mais questões não foram encontradas');
+        const missingIds = questionIds.filter(id => !questions.find(q => q.id === id));
+        logger.error('Questões não encontradas:', { missingIds });
+        throw new NotFoundError(`Questões não encontradas: ${missingIds.join(', ')}`);
       }
 
       // Calcular próxima ordem
       const maxOrder = test.questions.length > 0
           ? Math.max(...test.questions.map((q: any) => q.orderNum))
           : 0;
+
+      logger.info('Calculando ordem das questões:', { 
+        existingQuestionsCount: test.questions.length,
+        maxOrder 
+      });
 
       // Criar relações teste-questão
       const testQuestions = questionIds.map((questionId, index) => ({
@@ -489,9 +518,19 @@ class TestService {
         points: 1, // Valor padrão de 1 ponto por questão
       }));
 
-      await prisma.testQuestion.createMany({
+      logger.info('Criando relações teste-questão:', { 
+        testQuestions,
+        testQuestionsCount: testQuestions.length 
+      });
+
+      const createResult = await prisma.testQuestion.createMany({
         data: testQuestions,
         skipDuplicates: true,
+      });
+
+      logger.info('Resultado da criação:', { 
+        createResult,
+        createdCount: createResult.count 
       });
 
       // Buscar teste atualizado
@@ -539,6 +578,159 @@ class TestService {
       return this.formatTestResponse(updatedTest!);
     } catch (error) {
       logger.error('Erro ao adicionar questões', error, { testId, questionIds, userId });
+      throw error;
+    }
+  }
+
+  /**
+   * Adiciona questões externas ao teste (cria a questão e adiciona à prova)
+   */
+  async addExternalQuestionsToTest(
+    testId: string,
+    questionsData: any[],
+    userId: string
+  ): Promise<TestResponse> {
+    try {
+      logger.info('=== INÍCIO addExternalQuestionsToTest ===', { 
+        testId, 
+        questionsCount: questionsData.length,
+        userId 
+      });
+
+      const test = await prisma.test.findUnique({
+        where: { id: testId },
+        include: {
+          questions: true,
+        },
+      });
+
+      if (!test) {
+        throw new NotFoundError('Teste');
+      }
+
+      await this.checkTestEditAccess(test, userId);
+
+      if (test.status === 'ACTIVE') {
+        throw new ValidationError('Não é possível adicionar questões a um teste ativo');
+      }
+
+      // Calcular próxima ordem
+      const maxOrder = test.questions.length > 0
+          ? Math.max(...test.questions.map((q: any) => q.orderNum))
+          : 0;
+
+      logger.info('Processando questões externas:', { 
+        questionsCount: questionsData.length,
+        maxOrder 
+      });
+
+      const createdQuestions = [];
+      const testQuestions = [];
+
+      // Processar cada questão externa
+      for (let i = 0; i < questionsData.length; i++) {
+        const questionData = questionsData[i];
+        
+        logger.info('Processando questão externa:', { 
+          index: i,
+          questionId: questionData.externalId,
+          statement: questionData.statement?.substring(0, 100) + '...'
+        });
+
+        // Verificar se a questão já existe no banco
+        let createdQuestion = await prisma.question.findUnique({
+          where: { id: questionData.externalId }
+        });
+
+        // Se não existe, criar a questão no banco de dados
+        if (!createdQuestion) {
+          createdQuestion = await prisma.question.create({
+            data: {
+              id: questionData.externalId, // Usar o ID externo da API
+              statement: questionData.statement,
+              alternatives: questionData.alternatives || [],
+              correctAnswer: questionData.correctAnswer || 0,
+              subject: questionData.subject || 'Geral',
+              topic: questionData.topic,
+              grade: questionData.grade,
+              difficulty: questionData.difficulty || 'MEDIUM',
+              tags: questionData.tags || [],
+              hasMath: questionData.hasMath || false,
+            },
+          });
+        }
+
+        createdQuestions.push(createdQuestion);
+
+        // Criar relação teste-questão
+        testQuestions.push({
+          testId,
+          questionId: createdQuestion.id,
+          orderNum: maxOrder + i + 1,
+          points: questionData.points || 1,
+        });
+      }
+
+      logger.info('Criando relações teste-questão:', { 
+        testQuestionsCount: testQuestions.length 
+      });
+
+      // Criar todas as relações teste-questão
+      const createResult = await prisma.testQuestion.createMany({
+        data: testQuestions,
+        skipDuplicates: true,
+      });
+
+      logger.info('Resultado da criação:', { 
+        createResult,
+        createdCount: createResult.count 
+      });
+
+      // Buscar teste atualizado
+      const updatedTest = await prisma.test.findUnique({
+        where: { id: testId },
+        include: {
+          createdBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          school: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          questions: {
+            include: {
+              question: true,
+            },
+            orderBy: {
+              orderNum: 'asc',
+            },
+          },
+          _count: {
+            select: {
+              studentAttempts: true,
+            },
+          },
+        },
+      });
+
+      // Invalidar cache
+      await cache.invalidateTestCache(testId);
+
+      logger.info('Questões externas adicionadas com sucesso', {
+        testId,
+        addedQuestions: questionsData.length,
+        userId,
+      });
+
+      return this.formatTestResponse(updatedTest!);
+    } catch (error) {
+      logger.error('Erro ao adicionar questões externas', error, { testId, questionsCount: questionsData.length, userId });
       throw error;
     }
   }
@@ -1040,11 +1232,16 @@ class TestService {
         question: {
           id: tq.question.id,
           statement: tq.question.statement,
-          alternatives: tq.question.alternatives,
-          correctAnswer: tq.question.correctAnswer,
+          type: 'MULTIPLE_CHOICE',
+          options: tq.question.alternatives?.map((alt: string, index: number) => ({
+            text: alt,
+            isCorrect: index === tq.question.correctAnswer
+          })) || [],
           subject: tq.question.subject,
           topic: tq.question.topic,
           difficulty: tq.question.difficulty,
+          tags: tq.question.tags || [],
+          hasMath: tq.question.hasMath || false,
         },
       })) || [],
     };

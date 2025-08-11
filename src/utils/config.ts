@@ -124,7 +124,7 @@ function createConfig(): Config {
       RATE_LIMITS: {
         // Autenticação - mais restritivo
         AUTH: {
-          windowMs: 15 * 60 * 1000, // 15 minutos
+          windowMs: 2 * 60 * 1000, // 2 minutos
           max: 5, // 5 tentativas por IP
         },
         

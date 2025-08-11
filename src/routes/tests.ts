@@ -42,6 +42,21 @@ const addQuestionsSchema = z.object({
   questionIds: idsArraySchema,
 });
 
+const addExternalQuestionsSchema = z.object({
+  questions: z.array(z.object({
+    externalId: z.string().min(1, 'ID externo é obrigatório'),
+    statement: z.string().min(10, 'Enunciado deve ter pelo menos 10 caracteres'),
+    alternatives: z.array(z.string().min(1, 'Alternativa não pode estar vazia')).min(2, 'Deve ter pelo menos 2 alternativas').max(6, 'Máximo de 6 alternativas'),
+    correctAnswer: z.number().int().min(0, 'Resposta correta deve ser um índice válido'),
+    subject: z.string().min(2, 'Matéria deve ter pelo menos 2 caracteres'),
+    topic: z.string().optional(),
+    difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional().default('MEDIUM'),
+    tags: z.array(z.string()).optional().default([]),
+    hasMath: z.boolean().optional().default(false),
+    points: z.number().int().min(1).max(100).optional().default(1)
+  })).min(1, 'Deve ter pelo menos uma questão')
+});
+
 const testFiltersSchema = z.object({
   schoolId: idSchema.optional(),
   status: z.enum(['EDITING', 'ACTIVE', 'COMPLETED']).optional(),
@@ -234,10 +249,14 @@ router.post(
   asyncHandler(async (req, res) => {
     const startTime = Date.now();
     
-    logger.info('Adicionando questões ao teste', {
+    logger.info('=== ROTA: Adicionando questões ao teste ===', {
       testId: req.params.id,
       userId: req.user!.id,
-      questionsCount: req.body.questionIds.length,
+      requestBody: req.body,
+      questionIds: req.body.questionIds,
+      questionIdsType: typeof req.body.questionIds,
+      questionIdsLength: req.body.questionIds?.length,
+      headers: req.headers,
     });
 
     const result = await testService.addQuestionsToTest(
@@ -251,6 +270,44 @@ router.post(
       testId: req.params.id,
       userId: req.user!.id,
       questionsCount: req.body.questionIds.length,
+    });
+
+    res.json(result);
+  })
+);
+
+/**
+ * @route   POST /api/tests/:id/external-questions
+ * @desc    Adiciona questões externas ao teste
+ * @access  Private (Creator, STAFF ou ADMIN da escola)
+ */
+router.post(
+  '/:id/external-questions',
+  authenticate,
+  authorize('TEACHER', 'STAFF'),
+  rateLimiting.generalRateLimit,
+  validateRequest(addExternalQuestionsSchema),
+  asyncHandler(async (req, res) => {
+    const startTime = Date.now();
+    
+    logger.info('=== ROTA: Adicionando questões externas ao teste ===', {
+      testId: req.params.id,
+      userId: req.user!.id,
+      questionsCount: req.body.questions?.length,
+      questions: req.body.questions,
+    });
+
+    const result = await testService.addExternalQuestionsToTest(
+      req.params.id!,
+      req.body.questions,
+      req.user!.id
+    );
+
+    logger.performance('Questões externas adicionadas com sucesso', {
+      duration: Date.now() - startTime,
+      testId: req.params.id,
+      userId: req.user!.id,
+      questionsCount: req.body.questions.length,
     });
 
     res.json(result);

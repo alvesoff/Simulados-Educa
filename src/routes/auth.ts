@@ -19,7 +19,7 @@ const registerSchema = z.object({
   email: z.string().email('Email inválido').max(255),
   password: z.string().min(8, 'Senha deve ter pelo menos 8 caracteres').max(128),
   role: z.enum(['TEACHER', 'ADMIN']).optional().default('TEACHER'),
-  schoolId: z.string().uuid('ID da escola inválido'),
+  schoolId: z.string().cuid('ID da escola inválido'),
 });
 
 const loginSchema = z.object({

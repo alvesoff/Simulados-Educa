@@ -24,7 +24,7 @@ const studentLoginSchema = z.object({
     errorMap: () => ({ message: 'Série deve ser entre 1ANO-9ANO ou 1ENSINO_MEDIO-3ENSINO_MEDIO' })
   }),
   classroom: z.string().min(1, 'Sala é obrigatória').max(10, 'Sala deve ter no máximo 10 caracteres'),
-  schoolId: z.string().uuid('ID da escola inválido'),
+  schoolId: z.string().cuid('ID da escola inválido'),
   studentEmail: z.string().email('Email inválido').optional(),
   studentId: z.string().max(50).optional(), // ID/matrícula do estudante
 });
